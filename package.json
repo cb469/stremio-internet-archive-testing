@@ -1,9 +1,7 @@
 {
-"name": "stremio-ia-scraper",
-"version": "1.1.0",
+"name": "stremio-ia-scraper-test",
+"version": "1.0.0",
 "private": true,
 "engines": { "node": ">=18" },
-"dependencies": {
-"stremio-addon-sdk": "^1.6.1"
-}
+"dependencies": {}
 }
