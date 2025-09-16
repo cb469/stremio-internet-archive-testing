@@ -1,7 +1,7 @@
 {
-"name": "stremio-ia-scraper-test",
+"name": "vercel-api-test",
 "version": "1.0.0",
 "private": true,
-"engines": { "node": ">=18" },
+"engines": { "node": ">=22" },
 "dependencies": {}
 }
