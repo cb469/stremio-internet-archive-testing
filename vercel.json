@@ -1,0 +1,9 @@
+{
+"functions": {
+"api/addon/[...path].js": {
+"runtime": "nodejs18.x",
+"memory": 512,
+"maxDuration": 10
+}
+}
+}
