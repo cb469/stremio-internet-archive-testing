@@ -25,5 +25,6 @@ return;
 }
 
 res.statusCode = 404;
-res.end(Not found: ${url});
+res.setHeader('content-type', 'application/json');
+res.end(JSON.stringify({ error: 'Not found', url }));
 };
