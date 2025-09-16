@@ -460,13 +460,10 @@ const iface = builder.getInterface();
 module.exports = async (req, res) => {
 try {
 // If deployed under /api/addon, strip that prefix for the SDK router
+const iface = builder.getInterface();
+module.exports = async (req, res) => {
 if (req.url && req.url.startsWith('/api/addon')) {
 req.url = req.url.replace(/^/api/addon/, '') || '/';
 }
 return iface(req, res);
-} catch (e) {
-console.error('handler error', e);
-res.statusCode = 500;
-res.end('Internal error');
-}
 };
