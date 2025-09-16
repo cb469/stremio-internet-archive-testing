@@ -1,0 +1,15 @@
+{
+"name": "stremio-ia-scraper",
+"version": "1.1.0",
+"description": "Pure Stremio stream resolver for Internet Archive using Cinemeta/TMDB identifiers",
+"main": "api/addon/[...path].js",
+"license": "MIT",
+"engines": { "node": ">=18" },
+"dependencies": {
+"stremio-addon-sdk": "^1.6.1"
+},
+"scripts": {
+"dev": "vercel dev",
+"start": "node api/addon/[...path].js"
+}
+}
