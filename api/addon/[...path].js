@@ -460,10 +460,8 @@ const iface = builder.getInterface();
 module.exports = async (req, res) => {
 try {
 // If deployed under /api/addon, strip that prefix for the SDK router
-const iface = builder.getInterface();
-module.exports = async (req, res) => {
-if (req.url && req.url.startsWith('/api/addon')) {
-req.url = req.url.replace(/^/api/addon/, '') || '/';
-}
-return iface(req, res);
+module.exports = (req, res) => {
+res.statusCode = 200;
+res.setHeader('content-type', 'application/json');
+res.end(JSON.stringify({ ok: true, url: req.url }));
 };
