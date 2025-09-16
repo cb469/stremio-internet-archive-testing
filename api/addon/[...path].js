@@ -1,25 +1,29 @@
-// Minimal Stremio addon skeleton (smoke test)
-const { addonBuilder } = require('stremio-addon-sdk');
+module.exports = (req, res) => {
+let url = req.url || '/';
+if (url.startsWith('/api/addon')) {
+url = url.slice('/api/addon'.length) || '/';
+}
 
-const manifest = {
+if (url === '/manifest.json') {
+res.setHeader('content-type', 'application/json');
+res.end(JSON.stringify({
 id: 'org.test.addon',
 version: '1.0.0',
 name: 'Test Add-on',
-description: 'Smoke test',
+description: 'Manifest smoke test',
 resources: ['stream'],
 types: ['movie', 'series'],
 catalogs: []
-};
-
-const builder = new addonBuilder(manifest);
-builder.defineStreamHandler(async () => ({ streams: [] }));
-
-const iface = builder.getInterface();
-
-module.exports = async (req, res) => {
-// remove the /api/addon prefix so the SDK sees /manifest.json, /stream/...
-if (req.url && req.url.startsWith('/api/addon')) {
-req.url = req.url.replace(/^/api/addon/, '') || '/';
+}));
+return;
 }
-return iface(req, res);
+
+if (url.startsWith('/stream/')) {
+res.setHeader('content-type', 'application/json');
+res.end(JSON.stringify({ streams: [] }));
+return;
+}
+
+res.statusCode = 404;
+res.end(Not found: ${url});
 };
