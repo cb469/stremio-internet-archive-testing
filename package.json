@@ -1,5 +1,5 @@
 {
-"name": "stremio-ia-scraper",
+"name": "Internet Archive",
 "version": "1.0.0",
 "private": true,
 "engines": { "node": ">=18" },
