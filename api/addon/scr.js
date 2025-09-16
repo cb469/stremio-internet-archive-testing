@@ -10,7 +10,7 @@ const { addonBuilder } = require('stremio-addon-sdk');
 // Config
 const USER_AGENT = 'stremio-ia-scraper/1.1';
 const MAX_STREAMS_PER_TITLE = Number(process.env.MAX_STREAMS || 5);
-const REQUIRE_PD_OR_CC = String(process.env.REQUIRE_PD_OR_CC || 'true') === 'true';
+const REQUIRE_PD_OR_CC = String(process.env.REQUIRE_PD_OR_CC || 'false') === 'true';
 const TMDB_KEY = process.env.TMDB_KEY || null;
 
 // Endpoints
