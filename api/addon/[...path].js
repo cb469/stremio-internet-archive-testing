@@ -715,16 +715,27 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 builder.defineStreamHandler(async (args) => {
-  try {
-    const type = args.type;
-    const cm = await getCinemeta(type, args.id);
-    const title = cm?.meta?.name || cm?.meta?.title;
-    const year = cm?.meta?.year;
-    const imdbId = cm?.meta?.imdb_id || cm?.meta?.imdbId || (args.id?.startsWith('tt') ? args.id : null);
-    if (!title) return { streams: [] };
-
-    const tmdb = await getTmdbFull(type, imdbId).catch(() => null);
-
+try {
+// Temporary smoke test: set SMOKE_ONLY=1 in Vercel to force test streams
+if (String(process.env.SMOKE_ONLY || '0') === '1') {
+console.log('SMOKE_ONLY active, args:', args);
+return {
+streams: [
+{
+name: 'Internet Archive — test',
+title: 'Elephants Dream - ed_1024_512kb.mp4 • 119.57 MB',
+url: 'https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4',
+behaviorHints: { bingeGroup: 'smoke' }
+},
+{
+name: 'Internet Archive — test',
+title: 'Big Buck Bunny - big_buck_bunny_480p_surround-fix.avi • 263.69 MB',
+url: 'https://archive.org/download/BigBuckBunny_328/BigBuckBunny_512kb.mp4',
+behaviorHints: { bingeGroup: 'smoke' }
+}
+]
+};
+}
     // titles + acronyms
     const titles = altTitlesFrom(cm, tmdb, type);
     if (!titles.includes(title)) titles.unshift(title);
