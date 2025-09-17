@@ -770,37 +770,42 @@ builder.defineStreamHandler(async (args) => {
   }
 });
 
-// Build once
-const iface = builder.getInterface();
-const router = getRouter(iface);
-// Turn into Node req/res middleware (needs a next callback)
-const router = getRouter(iface);
+// Build Stremio interface once
+const stremioIface = builder.getInterface();
+// Turn it into a Node req/res middleware (requires a next callback)
+const stremioRouter = getRouter(stremioIface);
+
+// Optional per-request debug flag (if you added debug logging above)
+let CURRENT_DEBUG = false;
 
 // Vercel entrypoint with URL normalization
 module.exports = (req, res) => {
 try {
-
-// Normalize URL: strip /api/addon and remove Vercel catch‑all params
-module.exports = (req, res) => {
-try {
 const u = new URL(req.url, 'http://localhost');
 let pathname = u.pathname || '/';
-if (pathname.startsWith('/api/addon')) pathname = pathname.slice('/api/addon'.length) || '/';
+
+// Strip the /api/addon prefix so SDK sees /manifest.json, /stream/...
+if (pathname.startsWith('/api/addon')) {
+  pathname = pathname.slice('/api/addon'.length) || '/';
+}
+
+// Remove Vercel catch‑all params (?path= or ?slug=)
 u.searchParams.delete('path');
 u.searchParams.delete('slug');
-// Set per-request debug flag from query string
+
+// If you added debug logs earlier, keep this line:
 CURRENT_DEBUG = (process.env.DEBUG === '1') || (u.searchParams.get('debug') === '1');
 
-// Manual dev routes (see #3 below)
+// Example tiny health route (optional)
 if (pathname === '/dev/health') {
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ ok: true }));
   return;
 }
 
-// Forward to Stremio router
+// Hand the cleaned URL to Stremio router WITH a final callback
 req.url = pathname + (u.search || '');
-router(req, res, (err) => {
+stremioRouter(req, res, (err) => {
   if (err) {
     res.statusCode = 500;
     res.setHeader('content-type', 'application/json');
@@ -813,3 +818,9 @@ router(req, res, (err) => {
     res.end(JSON.stringify({ error: 'Not found', url: req.url }));
   }
 });
+} catch (e) {
+res.statusCode = 500;
+res.setHeader('content-type', 'application/json');
+res.end(JSON.stringify({ error: e.message }));
+}
+};
