@@ -772,6 +772,7 @@ builder.defineStreamHandler(async (args) => {
 
 // Build once
 const iface = builder.getInterface();
+const router = getRouter(iface);
 // Turn into Node req/res middleware (needs a next callback)
 const router = getRouter(iface);
 
@@ -780,16 +781,25 @@ module.exports = (req, res) => {
 try {
 
 // Normalize URL: strip /api/addon and remove Vercel catch‑all params
+module.exports = (req, res) => {
+try {
 const u = new URL(req.url, 'http://localhost');
 let pathname = u.pathname || '/';
-if (pathname.startsWith('/api/addon')) {
-pathname = pathname.slice('/api/addon'.length) || '/';
-}
+if (pathname.startsWith('/api/addon')) pathname = pathname.slice('/api/addon'.length) || '/';
 u.searchParams.delete('path');
 u.searchParams.delete('slug');
-req.url = pathname + (u.search || '');
+// Set per-request debug flag from query string
+CURRENT_DEBUG = (process.env.DEBUG === '1') || (u.searchParams.get('debug') === '1');
 
-// Call Stremio router WITH a final callback
+// Manual dev routes (see #3 below)
+if (pathname === '/dev/health') {
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ ok: true }));
+  return;
+}
+
+// Forward to Stremio router
+req.url = pathname + (u.search || '');
 router(req, res, (err) => {
   if (err) {
     res.statusCode = 500;
@@ -803,9 +813,3 @@ router(req, res, (err) => {
     res.end(JSON.stringify({ error: 'Not found', url: req.url }));
   }
 });
-} catch (e) {
-res.statusCode = 500;
-res.setHeader('content-type', 'application/json');
-res.end(JSON.stringify({ error: e.message }));
-}
-};
