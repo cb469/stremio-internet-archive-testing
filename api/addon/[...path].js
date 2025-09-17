@@ -1,40 +1,37 @@
 // Internet Archive x Stremio — Pure Stream Resolver (Vercel-ready)
-// Features:
-// - Movies and Series (episodes)
-// - Acronyms (SVTFOE, ATLA, etc.), alt titles via TMDB (optional)
-// - Airdate fallback for episodes (YYYY-MM-DD etc.)
-// - Collection fallback (search IA child items)
-// - Optional index-guess fallback (disabled by default)
-// - Strict gates to avoid nonsense (title/year/runtime/size/junk)
-// - URL normalization for Vercel catch-all (?path=) and /api/addon prefix
+// This version formats results with TRUE file info only:
+// - Left: "Internet Archive — 1080p" if IA provides real height; else "Internet Archive"
+// - Right: Series/Movie + original filename + real size (+ optional true duration, WxH, format)
+// Matching logic includes acronyms, airdate fallback, collection fallback, optional index-guess,
+// and strict anti-nonsense gates.
 
 const { addonBuilder } = require('stremio-addon-sdk');
 
 // ---------------------------- Config (env) ----------------------------
-const USER_AGENT = 'stremio-ia-scraper/1.2';
+const USER_AGENT = 'stremio-ia-scraper/1.3';
 
 const MAX_STREAMS_PER_TITLE = Number(process.env.MAX_STREAMS || 5);
 
-// Licensing filter (you asked to show everything by default)
+// Show everything by default (you asked to disable PD/CC-only filter)
 const REQUIRE_PD_OR_CC = String(process.env.REQUIRE_PD_OR_CC ?? 'false') === 'true';
 
 // Strictness and guards
 const STRICT_MODE = String(process.env.STRICT_MODE ?? 'true') === 'true';
 const MIN_FEATURE_SIZE_MB = Number(process.env.MIN_FEATURE_SIZE_MB || 200); // movie size gate
-const TITLE_SCORE_STRICT = Number(process.env.TITLE_SCORE_STRICT || 0.95);  // movie min score (0–1+)
+const TITLE_SCORE_STRICT = Number(process.env.TITLE_SCORE_STRICT || 0.95);
 const TITLE_SCORE_RELAXED = Number(process.env.TITLE_SCORE_RELAXED || 0.85);
 
 // Optional last-resort fallback for packs with zero S/E/title/date
 const ALLOW_INDEX_GUESS = String(process.env.ALLOW_INDEX_GUESS || 'false') === 'true';
 const INDEX_GUESS_MAX_VARIANCE_MIN = Number(process.env.INDEX_GUESS_MAX_VARIANCE_MIN || 12);
 
-// Phase-A collections (helps reduce noise, then we relax)
+// Phase-A collections (helps reduce noise)
 const IA_COLLECTIONS = (process.env.IA_COLLECTIONS || 'television,classic_tv,animationandcartoons,opensource_movies,feature_films')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-// TMDB (optional but recommended for alt titles/translations)
+// TMDB (optional for alt titles/translations)
 const TMDB_KEY = process.env.TMDB_KEY || null;
 
 // ---------------------------- Endpoints ----------------------------
@@ -89,36 +86,6 @@ const isVideoFile = (f) => {
   return isVid && !isSample && (f.size || 0) > 5_000_000;
 };
 
-const guessResolution = (f) => {
-  const s = ((f.name || '') + ' ' + (f.format || '')).toLowerCase();
-  if (/\b2160p|\b4k|\b3840x2160\b/.test(s)) return '2160p';
-  if (/\b1440p|\b2560x1440\b/.test(s)) return '1440p';
-  if (/\b1080p|\b1920x1080\b/.test(s)) return '1080p';
-  if (/\b720p|\b1280x720\b/.test(s)) return '720p';
-  if (/\b480p|\b640x480\b|\b854x480\b/.test(s)) return '480p';
-  if (/\b360p|\b640x360\b|\b480x360\b/.test(s)) return '360p';
-  return 'SD';
-};
-const guessVideoCodec = (f) => {
-  const s = ((f.name || '') + ' ' + (f.format || '')).toLowerCase();
-  if (/hevc|h\.?265|x265/.test(s)) return 'H.265/HEVC';
-  if (/h\.?264|x264|avc/.test(s)) return 'H.264/AVC';
-  if (/mpeg-?2/.test(s)) return 'MPEG-2';
-  if (/mpeg-?4/.test(s)) return 'MPEG-4';
-  if (/vp9/.test(s)) return 'VP9';
-  if (/webm/.test(s)) return 'WebM';
-  return 'Video';
-};
-const guessAudio = (f) => {
-  const s = ((f.name || '') + ' ' + (f.format || '')).toLowerCase();
-  if (/dd\+|eac-?3/.test(s)) return 'EAC3';
-  if (/dd|ac-?3/.test(s)) return 'AC3';
-  if (/aac/.test(s)) return 'AAC';
-  if (/opus/.test(s)) return 'Opus';
-  if (/mp3/.test(s)) return 'MP3';
-  return 'Audio';
-};
-
 const parseDurationToSeconds = (len) => {
   if (!len) return null;
   if (typeof len === 'number') return Math.round(len);
@@ -131,11 +98,22 @@ const parseDurationToSeconds = (len) => {
   return null;
 };
 
+const prettyDuration = (sec) => {
+  if (!sec && sec !== 0) return null;
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h) return `${h}h ${String(m).padStart(2,'0')}m`;
+  return `${m}m ${String(ss).padStart(2,'0')}s`;
+};
+
 const pickBestVideoFiles = (files = []) => {
   const video = files.filter(isVideoFile);
   const weight = (f) => {
     const name = (f.name || '') + ' ' + (f.format || '');
     let w = 0;
+    // This is just for ordering, not for displaying; we still display only true info.
     if (/\.mp4$/i.test(f.name)) w += 3;
     else if (/\.mkv$/i.test(f.name)) w += 2;
     else if (/\.webm$/i.test(f.name)) w += 1;
@@ -150,13 +128,93 @@ const pickBestVideoFiles = (files = []) => {
 };
 
 const encodeIAPath = (name) => String(name).split('/').map(encodeURIComponent).join('/');
-const buildLabel = (file) => `${guessResolution(file)} • ${guessVideoCodec(file)} • ${guessAudio(file)} • ${Math.round((file.size || 0) / 1e6)}MB`;
-const buildStream = (identifier, file, label = 'Internet Archive') => ({
-  name: label,
-  title: buildLabel(file),
-  url: `https://archive.org/download/${encodeURIComponent(identifier)}/${encodeIAPath(file.name)}`,
-  behaviorHints: { bingeGroup: identifier }
-});
+
+const prettySize = (bytes = 0) => {
+  const GB = 1024 ** 3, MB = 1024 ** 2;
+  if (bytes >= GB) return (bytes / GB).toFixed(2) + ' GB';
+  if (bytes >= MB) return (bytes / MB).toFixed(2) + ' MB';
+  return Math.max(1, Math.round(bytes / MB)) + ' MB';
+};
+
+// TRUE dimension/quality from IA (no guessing)
+const realHeight = (f) => {
+  const h = Number(f.height ?? f.videoheight ?? f.originalheight ?? f['source_height']);
+  return Number.isFinite(h) && h > 0 ? h : null;
+};
+const realWidth = (f) => {
+  const w = Number(f.width ?? f.videowidth ?? f.originalwidth ?? f['source_width']);
+  return Number.isFinite(w) && w > 0 ? w : null;
+};
+const qualityFromHeight = (h) => {
+  if (!h) return null;
+  if (h >= 2000) return '2160p';
+  if (h >= 1300) return '1440p';
+  if (h >= 1000) return '1080p';
+  if (h >= 700)  return '720p';
+  if (h >= 500)  return '480p';
+  if (h >= 350)  return '360p';
+  return `${h}p`;
+};
+const leftBadge = (file) => {
+  const h = realHeight(file);
+  const q = qualityFromHeight(h);
+  return q ? `Internet Archive — ${q}` : 'Internet Archive';
+};
+const dimString = (file) => {
+  const w = realWidth(file);
+  const h = realHeight(file);
+  if (w && h) return `${w}x${h}`;
+  return null;
+};
+
+const makeSeriesRightTitle = ({ show, season, episode, file }) => {
+  const parts = [
+    `${show || 'Series'} - S${String(season).padStart(2,'0')}E${String(episode).padStart(2,'0')} - ${file.name}`,
+    prettySize(file.size || 0),
+  ];
+  const sec = parseDurationToSeconds(file.length);
+  const dur = prettyDuration(sec);
+  if (dur) parts.push(dur);
+  const dims = dimString(file);
+  if (dims) parts.push(dims);
+  if (file.format) parts.push(String(file.format));
+  return parts.join(' • ');
+};
+
+const makeMovieRightTitle = ({ title, year, file }) => {
+  const parts = [
+    `${title || 'Movie'}${year ? ` (${year})` : ''} - ${file.name}`,
+    prettySize(file.size || 0),
+  ];
+  const sec = parseDurationToSeconds(file.length);
+  const dur = prettyDuration(sec);
+  if (dur) parts.push(dur);
+  const dims = dimString(file);
+  if (dims) parts.push(dims);
+  if (file.format) parts.push(String(file.format));
+  return parts.join(' • ');
+};
+
+// Build Stream object with TRUE-only labels
+const buildStream = (identifier, file, ctx = {}) => {
+  const name = leftBadge(file); // Left label: IA + real quality if present
+  let title;                    // Right label: show/movie + filename + size (+ duration/WxH/format if present)
+
+  if (ctx.kind === 'series') {
+    title = makeSeriesRightTitle({ show: ctx.show, season: ctx.season, episode: ctx.episode, file });
+  } else if (ctx.kind === 'movie') {
+    title = makeMovieRightTitle({ title: ctx.title, year: ctx.year, file });
+  } else {
+    title = `${file.name} • ${prettySize(file.size || 0)}`;
+  }
+
+  return {
+    name,
+    title,
+    url: `https://archive.org/download/${encodeURIComponent(identifier)}/${encodeIAPath(file.name)}`,
+    behaviorHints: { bingeGroup: identifier }
+  };
+};
 
 // Acronyms
 const STOP = new Set(['the','a','an','of','and','or','to','for','with','vs','versus','de','da','do','del','la','le','el','los','las']);
@@ -308,7 +366,7 @@ const buildEpisodeQueries = (terms, season, episode, year, epTitle) => {
     const ept = `"${epTitle.replace(/"/g, '\\"')}"`;
     base.forEach(b => out.push(`${b} AND ${ept}${yTerm}`));
   }
-  base.forEach(b => out.push(`${b}${yTerm} AND downloads:[10 TO *]`)); // loose
+  base.forEach(b => out.push(`${b}${yTerm} AND downloads:[10 TO *]`));
   return [...new Set(out)];
 };
 
@@ -382,7 +440,6 @@ const naturalSort = (a, b) => {
 };
 const tryIndexGuess = (files, season, episode, expectedRuntimeMin) => {
   let candidates = files.filter(isVideoFile);
-  // prefer files hinting the season
   const seasonRegexes = [
     new RegExp(`\\bseason[ ._\\-]*${season}\\b`, 'i'),
     new RegExp(`\\bs0?${season}\\b`, 'i'),
@@ -437,7 +494,7 @@ const buildCollectionChildQueries = (collectionId, season, episode, epTitle) => 
   return [...new Set(qs)];
 };
 
-const findSeriesEpisodeViaCollections = async ({ terms, season, episode, year, epTitleCandidates }) => {
+const findSeriesEpisodeViaCollections = async ({ terms, season, episode, year, epTitleCandidates, showTitle }) => {
   const collections = await findCollectionsForTitles(terms);
   const epTitle = epTitleCandidates?.[0];
   const streams = [];
@@ -480,7 +537,7 @@ const findSeriesEpisodeViaCollections = async ({ terms, season, episode, year, e
         }
 
         if (chosen) {
-          streams.push(buildStream(c.identifier, chosen, 'Internet Archive (Episode)'));
+          streams.push(buildStream(c.identifier, chosen, { kind: 'series', show: showTitle, season, episode }));
           if (streams.length >= MAX_STREAMS_PER_TITLE) return streams;
         }
       } catch {}
@@ -490,7 +547,7 @@ const findSeriesEpisodeViaCollections = async ({ terms, season, episode, year, e
 };
 
 // ---------------------------- Resolvers ----------------------------
-const findMovieStreams = async ({ terms, year, expectedRuntimeMin }) => {
+const findMovieStreams = async ({ terms, year, expectedRuntimeMin, displayTitle }) => {
   const phases = [
     { collections: IA_COLLECTIONS, titleScoreMin: TITLE_SCORE_STRICT },
     { collections: [],            titleScoreMin: TITLE_SCORE_RELAXED }
@@ -541,7 +598,7 @@ const findMovieStreams = async ({ terms, year, expectedRuntimeMin }) => {
           const tScore = scoreDocAgainst(c, terms, year);
           if (STRICT_MODE && tScore < phase.titleScoreMin) continue;
 
-          streams.push(buildStream(c.identifier, file));
+          streams.push(buildStream(c.identifier, file, { kind: 'movie', title: displayTitle, year }));
           if (streams.length >= MAX_STREAMS_PER_TITLE) break;
         }
         if (streams.length >= MAX_STREAMS_PER_TITLE) break;
@@ -554,7 +611,7 @@ const findMovieStreams = async ({ terms, year, expectedRuntimeMin }) => {
   return streams;
 };
 
-const findSeriesEpisodeStreams = async ({ terms, season, episode, year, epTitleCandidates, epDateTokens, expectedRuntimeMin }) => {
+const findSeriesEpisodeStreams = async ({ terms, season, episode, year, epTitleCandidates, epDateTokens, expectedRuntimeMin, showTitle }) => {
   const phases = [
     { collections: IA_COLLECTIONS },
     { collections: [] }
@@ -590,12 +647,12 @@ const findSeriesEpisodeStreams = async ({ terms, season, episode, year, epTitleC
         if (exact.length) {
           exact.sort((a, b) => (b.size || 0) - (a.size || 0));
           for (const f of exact) {
-            streams.push(buildStream(c.identifier, f, 'Internet Archive (Episode)'));
+            streams.push(buildStream(c.identifier, f, { kind: 'series', show: showTitle, season, episode }));
             if (streams.length >= MAX_STREAMS_PER_TITLE) break;
           }
         } else if (files.length === 1) {
           const tScore = scoreDocAgainst(c, terms, year);
-          if (tScore > 0.85) streams.push(buildStream(c.identifier, files[0], 'Internet Archive (Episode)'));
+          if (tScore > 0.85) streams.push(buildStream(c.identifier, files[0], { kind: 'series', show: showTitle, season, episode }));
         }
         if (streams.length >= MAX_STREAMS_PER_TITLE) break;
       } catch {}
@@ -606,13 +663,12 @@ const findSeriesEpisodeStreams = async ({ terms, season, episode, year, epTitleC
 
   // Fallback: search inside true IA collections
   if (!streams.length) {
-    const extra = await findSeriesEpisodeViaCollections({ terms, season, episode, year, epTitleCandidates });
+    const extra = await findSeriesEpisodeViaCollections({ terms, season, episode, year, epTitleCandidates, showTitle });
     streams.push(...extra);
   }
 
   // Optional last-resort: index-guess in packs
   if (!streams.length && ALLOW_INDEX_GUESS) {
-    // Reuse a small candidate set using relaxed phase
     const queries = buildEpisodeQueries(terms, season, episode, year, epTitleCandidates[0]);
     const candidates = [];
     for (const q of queries.slice(0, 6)) {
@@ -635,7 +691,7 @@ const findSeriesEpisodeStreams = async ({ terms, season, episode, year, epTitleC
         const files = (meta?.files || []).filter(isVideoFile);
         const guess = tryIndexGuess(files, season, episode, expectedRuntimeMin);
         if (guess) {
-          streams.push(buildStream(c.identifier, guess, 'Internet Archive (Index Guess)'));
+          streams.push(buildStream(c.identifier, guess, { kind: 'series', show: showTitle, season, episode }));
           break;
         }
       } catch {}
@@ -648,9 +704,9 @@ const findSeriesEpisodeStreams = async ({ terms, season, episode, year, epTitleC
 // ---------------------------- Manifest & handler ----------------------------
 const manifest = {
   id: 'org.archive.scraper',
-  version: '1.2.0',
+  version: '1.3.0',
   name: 'Internet Archive Scraper',
-  description: 'Resolves Cinemeta/TMDB titles to archive.org streams (strict anti-nonsense matching)',
+  description: 'Resolves Cinemeta/TMDB titles to archive.org streams (strict anti-nonsense; true file info only)',
   resources: ['stream'],
   types: ['movie', 'series'],
   catalogs: []
@@ -681,7 +737,7 @@ builder.defineStreamHandler(async (args) => {
         (tmdb?.runtime && Number(tmdb.runtime)) ||
         null;
 
-      const streams = await findMovieStreams({ terms, year, expectedRuntimeMin });
+      const streams = await findMovieStreams({ terms, year, expectedRuntimeMin, displayTitle: title });
       return { streams };
     } else {
       const season = parseInt(args.seriesInfo?.season || args.extra?.season || 0, 10);
@@ -703,7 +759,8 @@ builder.defineStreamHandler(async (args) => {
         year,
         epTitleCandidates: epTitle ? [epTitle] : [],
         epDateTokens,
-        expectedRuntimeMin
+        expectedRuntimeMin,
+        showTitle: title
       });
       return { streams };
     }
@@ -716,13 +773,12 @@ builder.defineStreamHandler(async (args) => {
 // Build interface once
 const iface = builder.getInterface();
 
-// Vercel entrypoint with URL normalization
+// Vercel entrypoint with URL normalization (for catch-all ?path=)
 module.exports = async (req, res) => {
   try {
     const u = new URL(req.url, 'http://localhost');
     let pathname = u.pathname;
     if (pathname.startsWith('/api/addon')) pathname = pathname.slice('/api/addon'.length) || '/';
-    // remove catch-all params Vercel adds
     u.searchParams.delete('path');
     u.searchParams.delete('slug');
     req.url = pathname + (u.search || '');
