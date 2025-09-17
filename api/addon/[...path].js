@@ -770,26 +770,26 @@ builder.defineStreamHandler(async (args) => {
   }
 });
 
-// Build interface once
+// Build once
 const iface = builder.getInterface();
-// Turn it into an HTTP handler
+// Turn into Node req/res handler
 const router = getRouter(iface);
 
-// Vercel entrypoint with URL normalization (for catch-all ?path=)
+// Vercel entrypoint
 module.exports = (req, res) => {
 try {
 const u = new URL(req.url, 'http://localhost');
-let pathname = u.pathname;
-    // strip the Vercel prefix
+let pathname = u.pathname || '/';
+   // Strip /api/addon prefix (Vercel) so SDK sees /manifest.json, /stream/...
 if (pathname.startsWith('/api/addon')) {
   pathname = pathname.slice('/api/addon'.length) || '/';
 }
 
-// remove catch‑all params (?path= or ?slug=) Vercel adds
+// Remove catch-all params Vercel adds for [...path]
 u.searchParams.delete('path');
 u.searchParams.delete('slug');
 
-// hand the cleaned URL to the Stremio router
+// Hand the cleaned URL to the SDK router
 req.url = pathname + (u.search || '');
 router(req, res);
 } catch (e) {
