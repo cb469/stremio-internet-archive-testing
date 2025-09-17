@@ -772,20 +772,29 @@ builder.defineStreamHandler(async (args) => {
 
 // Build interface once
 const iface = builder.getInterface();
+// Turn it into an HTTP handler
+const router = getRouter(iface);
 
 // Vercel entrypoint with URL normalization (for catch-all ?path=)
-module.exports = async (req, res) => {
-  try {
-    const u = new URL(req.url, 'http://localhost');
-    let pathname = u.pathname;
-    if (pathname.startsWith('/api/addon')) pathname = pathname.slice('/api/addon'.length) || '/';
-    u.searchParams.delete('path');
-    u.searchParams.delete('slug');
-    req.url = pathname + (u.search || '');
-    return iface(req, res);
-  } catch (e) {
-    res.statusCode = 500;
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ error: e.message }));
-  }
+module.exports = (req, res) => {
+try {
+const u = new URL(req.url, 'http://localhost');
+let pathname = u.pathname;
+    // strip the Vercel prefix
+if (pathname.startsWith('/api/addon')) {
+  pathname = pathname.slice('/api/addon'.length) || '/';
+}
+
+// remove catch‑all params (?path= or ?slug=) Vercel adds
+u.searchParams.delete('path');
+u.searchParams.delete('slug');
+
+// hand the cleaned URL to the Stremio router
+req.url = pathname + (u.search || '');
+router(req, res);
+} catch (e) {
+res.statusCode = 500;
+res.setHeader('content-type', 'application/json');
+res.end(JSON.stringify({ error: e.message }));
+}
 };
