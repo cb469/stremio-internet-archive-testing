@@ -772,26 +772,37 @@ builder.defineStreamHandler(async (args) => {
 
 // Build once
 const iface = builder.getInterface();
-// Turn the interface into a Node req/res handler
+// Turn into Node req/res middleware (needs a next callback)
 const router = getRouter(iface);
 
 // Vercel entrypoint with URL normalization
 module.exports = (req, res) => {
 try {
+
+// Normalize URL: strip /api/addon and remove Vercel catch‑all params
 const u = new URL(req.url, 'http://localhost');
 let pathname = u.pathname || '/';
-   // strip /api/addon prefix
 if (pathname.startsWith('/api/addon')) {
-  pathname = pathname.slice('/api/addon'.length) || '/';
+pathname = pathname.slice('/api/addon'.length) || '/';
 }
-
-// remove Vercel catch‑all params
 u.searchParams.delete('path');
 u.searchParams.delete('slug');
-
-// forward to Stremio router
 req.url = pathname + (u.search || '');
-router(req, res);
+
+// Call Stremio router WITH a final callback
+router(req, res, (err) => {
+  if (err) {
+    res.statusCode = 500;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ error: String(err.message || err) }));
+    return;
+  }
+  if (!res.writableEnded) {
+    res.statusCode = 404;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ error: 'Not found', url: req.url }));
+  }
+});
 } catch (e) {
 res.statusCode = 500;
 res.setHeader('content-type', 'application/json');
