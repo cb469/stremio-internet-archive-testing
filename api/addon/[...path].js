@@ -5,7 +5,7 @@
 // Matching logic includes acronyms, airdate fallback, collection fallback, optional index-guess,
 // and strict anti-nonsense gates.
 
-const { addonBuilder } = require('stremio-addon-sdk');
+const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 
 // ---------------------------- Config (env) ----------------------------
 const USER_AGENT = 'stremio-ia-scraper/1.3';
@@ -772,24 +772,24 @@ builder.defineStreamHandler(async (args) => {
 
 // Build once
 const iface = builder.getInterface();
-// Turn into Node req/res handler
+// Turn the interface into a Node req/res handler
 const router = getRouter(iface);
 
-// Vercel entrypoint
+// Vercel entrypoint with URL normalization
 module.exports = (req, res) => {
 try {
 const u = new URL(req.url, 'http://localhost');
 let pathname = u.pathname || '/';
-   // Strip /api/addon prefix (Vercel) so SDK sees /manifest.json, /stream/...
+   // strip /api/addon prefix
 if (pathname.startsWith('/api/addon')) {
   pathname = pathname.slice('/api/addon'.length) || '/';
 }
 
-// Remove catch-all params Vercel adds for [...path]
+// remove Vercel catch‑all params
 u.searchParams.delete('path');
 u.searchParams.delete('slug');
 
-// Hand the cleaned URL to the SDK router
+// forward to Stremio router
 req.url = pathname + (u.search || '');
 router(req, res);
 } catch (e) {
